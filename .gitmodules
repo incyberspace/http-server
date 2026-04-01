@@ -1,0 +1,9 @@
+[submodule "spdlog"]
+	path = spdlog
+	url = https://github.com/gabime/spdlog
+[submodule "boost"]
+	path = boost
+	url = https://github.com/boostorg/boost
+[submodule "googletest"]
+	path = googletest
+	url = https://github.com/google/googletest

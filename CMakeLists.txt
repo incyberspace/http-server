@@ -9,16 +9,16 @@ add_library(HTTP_LIB STATIC
         src/utils.hpp
         src/config.cpp
         src/config.hpp
+        src/socket.cpp
+        src/socket.hpp
 )
 target_compile_features(HTTP_LIB PUBLIC cxx_std_23)
-target_compile_options(HTTP_LIB PUBLIC -Wall -Wextra -pedantic-errors)
+target_compile_options(HTTP_LIB PUBLIC -static -Wall -Wextra -pedantic-errors)
+target_link_options(HTTP_LIB PUBLIC -static -Wall -Wextra -pedantic-errors)
+target_compile_definitions(HTTP_LIB PRIVATE UNICODE)
 
 add_subdirectory(spdlog)
 target_link_libraries(HTTP_LIB PUBLIC spdlog::spdlog)
-
-add_subdirectory(boost)
-target_link_libraries(HTTP_LIB PUBLIC Boost::headers)
-target_link_libraries(HTTP_LIB PRIVATE Boost::asio)
 
 if (WIN32)
     target_link_libraries(HTTP_LIB PRIVATE "ws2_32")

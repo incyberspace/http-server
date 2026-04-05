@@ -18,7 +18,7 @@ namespace config_lib
 		template <typename T>
 		friend bool operator==(const T &lhs, const ConfigProxy &rhs);
 
-	private:
+	  private:
 		using ValueVariant = std::variant<int, std::string, bool>;
 
 	  public:

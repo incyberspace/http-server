@@ -11,6 +11,8 @@ add_library(HTTP_LIB STATIC
         src/config.hpp
         src/socket.cpp
         src/socket.hpp
+        src/async.cpp
+        src/async.hpp
 )
 target_compile_features(HTTP_LIB PUBLIC cxx_std_23)
 target_compile_options(HTTP_LIB PUBLIC -static -Wall -Wextra -pedantic-errors)

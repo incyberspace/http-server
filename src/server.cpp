@@ -1,5 +1,6 @@
 #include "server.hpp"
 
+#include <fstream>
 #include <regex>
 #include <thread>
 #include <vector>
@@ -7,6 +8,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include "async.hpp"
 #include "config.hpp"
 
 namespace
@@ -26,7 +28,7 @@ namespace http_lib
 							utils_lib::get_last_error_as_str()));
 		}
 
-		sockaddr_in addr_info;
+		sockaddr_in addr_info = {};
 		addr_info.sin_family = AF_INET;
 		addr_info.sin_port =
 			htons(static_cast<int>(config_lib::config.get("PORT")));
@@ -42,13 +44,13 @@ namespace http_lib
 									  utils_lib::get_last_error_as_str()));
 		}
 
-		if (listen(listen_sock.get(), 1) == SOCKET_ERROR)
+		if (listen(listen_sock.get(), SOMAXCONN) == SOCKET_ERROR)
 		{
 			log_and_throw(std::format("Listen failed. Reason : {}",
 									  utils_lib::get_last_error_as_str()));
 		}
 
-		std::vector<std::jthread> server_workers;
+		std::vector<std::jthread> spawned_servers;
 		while (true)
 		{
 			socket_lib::SockWrapper accept_sock =
@@ -61,8 +63,8 @@ namespace http_lib
 				break;
 			}
 
-			u_long mode = 1;
-			if (ioctlsocket(accept_sock.get(), FIONBIO, &mode) != 0)
+			u_long socket_mode = 1;
+			if (ioctlsocket(accept_sock.get(), FIONBIO, &socket_mode) != 0)
 			{
 				spdlog::error("ioctlsocket failed. Reason : {}",
 							  utils_lib::get_last_error_as_str());
@@ -70,9 +72,9 @@ namespace http_lib
 			}
 
 			spdlog::info("Accepted");
-			server_workers.emplace_back(
+			spawned_servers.emplace_back(
 				[accept_sock = std::move(accept_sock)]() mutable -> void {
-					Server server(std::move(accept_sock));
+					Server server(std::move(accept_sock), 100000);
 					server.run();
 				});
 		}
@@ -84,10 +86,8 @@ namespace http_lib
 	{
 	}
 
-	Request Server::get_request()
+	async_lib::Awaitable<Request> Server::get_request()
 	{
-		Request result;
-
 		std::string line;
 		line = sock_stream_.read_line();
 
@@ -98,7 +98,7 @@ namespace http_lib
 		if (tokens.size() != 5)
 		{
 			spdlog::warn("An invalid request line {}", line);
-			return result;
+			co_return {};
 		}
 
 		Method method;
@@ -117,6 +117,7 @@ namespace http_lib
 		method.queries = std::move(queries);
 		method.http_version = tokens[4];
 
+		Request result;
 		result.method = std::move(method);
 
 		while (true)
@@ -139,7 +140,10 @@ namespace http_lib
 
 		if (result.headers.contains("content-length"))
 		{
-			result.body = sock_stream_.read_all(
+			// result.body = sock_stream_.read_all(
+			//	std::stoi(result.headers.at("content-length")));
+
+			result.body = co_await sock_stream_.read_all_async(
 				std::stoi(result.headers.at("content-length")));
 		}
 
@@ -148,20 +152,74 @@ namespace http_lib
 
 	void Server::send_response(const Request &request) const
 	{
+		static constexpr int fstream_buf_size = 1000000;
 		using namespace std::string_literals;
+
+		auto file_path = std::filesystem::path(
+			static_cast<std::string>(config_lib::config.get("WORKING_DIR")));
+
+		if (request.method.target.size() == 1)
+		{
+			file_path /= "index.html";
+		}
+		else
+		{
+			file_path /= request.method.target.substr(1);
+		}
+
+		std::ifstream f(file_path, std::ios::binary);
+
+		if (!f.is_open())
+		{
+			log_and_throw(
+				std::format("Failed to open {}", path_to_c_str(file_path)));
+		}
 
 		sock_stream_.send_all(
 			"HTTP/1.1 200 OK\r\n"s); // Raw strings include NUL thus don't work
-		sock_stream_.send_all("Content-Length: 0\r\n"s);
+
+		f.seekg(0, std::ios::end);
+		const std::streamoff file_size = f.tellg();
+		f.seekg(0, std::ios::beg);
+
+		sock_stream_.send_all(std::format("Content-Length: {}\r\n", file_size));
+
+		std::vector<char> buf;
+		buf.resize(fstream_buf_size);
+
 		sock_stream_.send_all("\r\n"s);
+
+		while (f.read(buf.data(), static_cast<std::streamsize>(buf.size())))
+		{
+			sock_stream_.send_all(buf);
+		}
+
+		sock_stream_.send_all(
+			{buf.begin(), std::next(buf.begin(), f.gcount())});
 	}
 
 	void Server::run()
 	{
 		while (true)
 		{
-			Request request = get_request();
-			send_response(request);
+			Request request;
+			try
+			{
+				request = get_request();
+			}
+			catch ([[maybe_unused]] std::exception &e)
+			{
+				break;
+			}
+
+			try
+			{
+				send_response(request);
+			}
+			catch ([[maybe_unused]] std::exception &e)
+			{
+				break;
+			}
 		}
 	}
 } // namespace http_lib

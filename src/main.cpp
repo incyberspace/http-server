@@ -10,7 +10,7 @@
 
 int main()
 {
-	spdlog::set_default_logger(spdlog::stdout_color_mt("server"));
+	// spdlog::set_level(spdlog::level::off);
 	WSADATA wsa_data;
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0)

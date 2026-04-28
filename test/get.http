@@ -1,3 +1,4 @@
-### GET request to example server
-GET localhost:8000
-###
+GET localhost:8000/test/index.html
+Content-Length: 10
+
+123456789

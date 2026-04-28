@@ -7,6 +7,8 @@
 
 #include <winsock2.h>
 
+#include "async.hpp"
+
 namespace socket_lib
 {
 	class SockWrapper
@@ -34,10 +36,11 @@ namespace socket_lib
 		explicit SockStream(SockWrapper sock, int buf_size);
 
 		std::vector<char> read(int size);
+		async_lib::AsyncIo<std::vector<char>> read_all_async(int size);
 		std::vector<char> read_all(int size);
 		std::string read_line();
 
-		int send(const std::span<const char> &data) const;
+		[[nodiscard]] int send(const std::span<const char> &data) const;
 		void send_all(const std::span<const char> &data) const;
 
 	  private:

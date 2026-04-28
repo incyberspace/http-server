@@ -1,5 +1,6 @@
 #include "socket.hpp"
 
+#include "async.hpp"
 #include "utils.hpp"
 
 #include <cassert>
@@ -87,6 +88,26 @@ namespace socket_lib
 		return result;
 	}
 
+	async_lib::AsyncIo<std::vector<char>> SockStream::read_all_async(const int size)
+	{
+		int total_read_bytes = 0;
+		std::vector<char> result;
+
+		while (total_read_bytes < size)
+		{
+			const int remaining_bytes = size - total_read_bytes;
+			std::vector<char> buf =
+				read(remaining_bytes > buf_size_ ? buf_size_ : remaining_bytes);
+			total_read_bytes += static_cast<int>(buf.size());
+			result.insert(result.end(), buf.begin(), buf.end());
+
+			co_await std::suspend_always();
+		}
+		assert(total_read_bytes == size);
+
+		co_return result;
+	}
+
 	std::vector<char> SockStream::read_all(const int size)
 	{
 		int total_read_bytes = 0;
@@ -94,9 +115,9 @@ namespace socket_lib
 
 		while (total_read_bytes < size)
 		{
-			const int remaining_size = size - total_read_bytes;
+			const int remaining_bytes = size - total_read_bytes;
 			std::vector<char> buf =
-				read(remaining_size > buf_size_ ? buf_size_ : remaining_size);
+				read(remaining_bytes > buf_size_ ? buf_size_ : remaining_bytes);
 			total_read_bytes += static_cast<int>(buf.size());
 			result.insert(result.end(), buf.begin(), buf.end());
 		}
@@ -136,12 +157,12 @@ namespace socket_lib
 				break;
 			}
 
-			if (const auto cr_it =
+			if (const auto lf_it =
 					std::ranges::find(buf.begin(), buf.end(), '\n');
-				cr_it != buf.end())
+				lf_it != buf.end())
 			{
-				result.insert(result.end(), buf.begin(), cr_it);
-				read_queue_.insert(read_queue_.end(), std::next(cr_it + 1),
+				result.insert(result.end(), buf.begin(), lf_it);
+				read_queue_.insert(read_queue_.end(), std::next(lf_it),
 								   buf.end());
 				break;
 			}
@@ -152,10 +173,10 @@ namespace socket_lib
 
 	int SockStream::send(const std::span<const char> &data) const
 	{
-		const int read_bytes =
+		const int sent_bytes =
 			::send(sock_.get(), data.data(), static_cast<int>(data.size()), 0);
 
-		if (read_bytes < 0)
+		if (sent_bytes < 0)
 		{
 			if (WSAGetLastError() == WSAEWOULDBLOCK)
 			{
@@ -166,7 +187,7 @@ namespace socket_lib
 									  utils_lib::get_last_error_as_str()));
 		}
 
-		return read_bytes;
+		return sent_bytes;
 	}
 
 	void SockStream::send_all(const std::span<const char> &data) const

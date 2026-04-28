@@ -40,7 +40,7 @@ namespace http_lib
 		int sock_stream_buf_size_;
 		static constexpr int default_sock_stream_buf_size = 100;
 		socket_lib::SockStream sock_stream_;
-		[[nodiscard]] Request get_request();
+		[[nodiscard]] async_lib::Awaitable<Request> get_request();
 		void send_response(const Request &request) const;
 	};
 } // namespace http_lib

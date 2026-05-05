@@ -1,4 +1,3 @@
-GET localhost:8000/test/index.html
-Content-Length: 10
+GET localhost:8000/index.html?a=1&b=3
 
 123456789

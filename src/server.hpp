@@ -14,7 +14,7 @@ namespace http_lib
 	{
 		std::string type;
 		std::string target;
-		std::vector<std::string> queries;
+		std::unordered_map<std::string, std::string> queries;
 		std::string http_version;
 	};
 
@@ -33,14 +33,19 @@ namespace http_lib
 		explicit Server(
 			socket_lib::SockWrapper sock,
 			int sock_stream_buf_size = default_sock_stream_buf_size);
+		Server(const Server &other) = delete;
+		Server(Server &&other) = delete;
 
-		void run();
+		async_lib::Task<void> run();
+		void resume() const;
+		[[nodiscard]] bool is_done() const;
 
 	  private:
 		int sock_stream_buf_size_;
 		static constexpr int default_sock_stream_buf_size = 100;
 		socket_lib::SockStream sock_stream_;
-		[[nodiscard]] async_lib::Awaitable<Request> get_request();
-		void send_response(const Request &request) const;
+		async_lib::Task<void> runner_task_;
+		[[nodiscard]] async_lib::Task<Request> get_request();
+		[[nodiscard]] async_lib::Task<void> send_response(const Request &request) const;
 	};
 } // namespace http_lib

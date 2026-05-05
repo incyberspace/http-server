@@ -1,8 +1,8 @@
 #include "server.hpp"
 
 #include <fstream>
+#include <ranges>
 #include <regex>
-#include <thread>
 #include <vector>
 
 #include <winsock2.h>
@@ -10,10 +10,6 @@
 
 #include "async.hpp"
 #include "config.hpp"
-
-namespace
-{
-} // namespace
 
 namespace http_lib
 {
@@ -50,9 +46,11 @@ namespace http_lib
 									  utils_lib::get_last_error_as_str()));
 		}
 
-		std::vector<std::jthread> spawned_servers;
-		while (true)
+		std::vector<std::unique_ptr<Server>> spawned_servers;
+
+		do
 		{
+			spdlog::debug("Server count : {}", spawned_servers.size());
 			socket_lib::SockWrapper accept_sock =
 				accept(listen_sock.get(), nullptr, nullptr);
 
@@ -71,27 +69,40 @@ namespace http_lib
 				break;
 			}
 
+			std::erase_if(spawned_servers,
+						  [](const std::unique_ptr<Server> &server) -> bool {
+							  return server->is_done();
+						  });
 			spdlog::info("Accepted");
 			spawned_servers.emplace_back(
-				[accept_sock = std::move(accept_sock)]() mutable -> void {
-					Server server(std::move(accept_sock), 100000);
-					server.run();
-				});
-		}
+				std::make_unique<Server>(std::move(accept_sock), 100000));
+		} while (true);
 	}
 
 	Server::Server(socket_lib::SockWrapper sock, const int sock_stream_buf_size)
 		: sock_stream_buf_size_(sock_stream_buf_size),
-		  sock_stream_(std::move(sock), sock_stream_buf_size)
+		  sock_stream_(std::move(sock), sock_stream_buf_size),
+		  runner_task_(run())
 	{
 	}
 
-	async_lib::Awaitable<Request> Server::get_request()
+	void Server::resume() const
 	{
-		std::string line;
-		line = sock_stream_.read_line();
+		runner_task_.resume();
+	}
 
-		const std::regex re{R"((\S+) (\S+?)(?:\?(\S+))? HTTP\/(\S+))"};
+	bool Server::is_done() const
+	{
+		return runner_task_.is_done();
+	}
+
+	async_lib::Task<Request> Server::get_request()
+	{
+		static const std::regex re{R"((\S+) (\S+?)(?:\?(\S+))? HTTP\/(\S+))"};
+
+		std::string line;
+		line = co_await sock_stream_.read_line_async();
+
 		std::smatch tokens;
 		std::regex_search(line, tokens, re);
 
@@ -105,13 +116,14 @@ namespace http_lib
 		method.type = tokens[1];
 		method.target = tokens[2];
 
-		std::vector<std::string> queries;
+		std::unordered_map<std::string, std::string> queries;
 		std::stringstream ss(tokens[3]);
 
 		std::string query;
 		while (getline(ss, query, '&'))
 		{
-			queries.push_back(query);
+			const auto equal_it = query.find('=');
+			queries[query.substr(0, equal_it)] = query.substr(equal_it + 1);
 		}
 
 		method.queries = std::move(queries);
@@ -122,35 +134,37 @@ namespace http_lib
 
 		while (true)
 		{
-			line = sock_stream_.read_line();
+			line = co_await sock_stream_.read_line_async();
 
 			if (line.empty())
 			{
 				break;
 			}
 
-			const auto space_it = line.find(' ');
-			result.headers[line.substr(0, space_it - 1) |
-						   std::views::transform([](const char ch) -> char {
-							   return static_cast<char>(tolower(ch));
-						   }) |
-						   std::ranges::to<std::string>()] =
-				line.substr(space_it + 1);
+			const auto colon_it = line.find(':');
+
+			std::string key = line.substr(0, colon_it);
+			utils_lib::strip(key);
+			key = key | std::views::transform([](const char ch) -> char {
+					  return static_cast<char>(tolower(ch));
+				  }) |
+				  std::ranges::to<std::string>();
+			std::string value = line.substr(colon_it + 1);
+			utils_lib::strip(value);
+
+			result.headers[key] = value;
 		}
 
 		if (result.headers.contains("content-length"))
 		{
-			// result.body = sock_stream_.read_all(
-			//	std::stoi(result.headers.at("content-length")));
-
 			result.body = co_await sock_stream_.read_all_async(
 				std::stoi(result.headers.at("content-length")));
 		}
 
-		return result;
+		co_return result;
 	}
 
-	void Server::send_response(const Request &request) const
+	async_lib::Task<void> Server::send_response(const Request &request) const
 	{
 		static constexpr int fstream_buf_size = 1000000;
 		using namespace std::string_literals;
@@ -175,51 +189,59 @@ namespace http_lib
 				std::format("Failed to open {}", path_to_c_str(file_path)));
 		}
 
-		sock_stream_.send_all(
-			"HTTP/1.1 200 OK\r\n"s); // Raw strings include NUL thus don't work
+		co_await sock_stream_.send_all_async(
+			"HTTP/1.1 200 OK\r\n"s); // Raw strings include a NUL thus don't
+									 // work
 
 		f.seekg(0, std::ios::end);
 		const std::streamoff file_size = f.tellg();
 		f.seekg(0, std::ios::beg);
 
-		sock_stream_.send_all(std::format("Content-Length: {}\r\n", file_size));
+		co_await sock_stream_.send_all_async(
+			std::format("Content-Length: {}\r\n", file_size));
 
 		std::vector<char> buf;
 		buf.resize(fstream_buf_size);
 
-		sock_stream_.send_all("\r\n"s);
+		co_await sock_stream_.send_all_async("\r\n"s);
 
 		while (f.read(buf.data(), static_cast<std::streamsize>(buf.size())))
 		{
-			sock_stream_.send_all(buf);
+			co_await sock_stream_.send_all_async(buf);
 		}
 
-		sock_stream_.send_all(
+		co_await sock_stream_.send_all_async(
 			{buf.begin(), std::next(buf.begin(), f.gcount())});
 	}
 
-	void Server::run()
+	async_lib::Task<void> Server::run()
 	{
 		while (true)
 		{
 			Request request;
 			try
 			{
-				request = get_request();
+				request = co_await get_request();
 			}
-			catch ([[maybe_unused]] std::exception &e)
+			catch (std::exception &e)
 			{
+				spdlog::debug("get_request() failed : {}", e.what());
 				break;
 			}
 
 			try
 			{
-				send_response(request);
+				co_await send_response(request);
 			}
-			catch ([[maybe_unused]] std::exception &e)
+			catch (std::exception &e)
 			{
+				spdlog::debug("send_response() failed : {}", e.what());
 				break;
 			}
+
+			co_await async_lib::Task<void>::ScheduleResume();
 		}
+
+		spdlog::debug("The server loop has ended");
 	}
 } // namespace http_lib

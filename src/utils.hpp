@@ -1,14 +1,10 @@
 #pragma once
 
 #include <filesystem>
-#include <iostream>
-
-#include <winsock2.h>
-
 #include <spdlog/spdlog.h>
 
 #define path_to_c_str(path)                                                    \
-	(reinterpret_cast<const char *>((path).string().c_str()))
+	(reinterpret_cast<const char *>((path).u8string().c_str()))
 
 #define log_and_throw(msg)                                                     \
 	do                                                                         \

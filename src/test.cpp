@@ -12,10 +12,21 @@ namespace test_lib
 	{
 		std::unique_ptr<const char[]> tmp_config_path_c_str;
 		tmp_config_path_c_str.reset(std::tmpnam(nullptr));
-		std::filesystem::path tmp_config_path = tmp_config_path_c_str.get() + 1;
+		std::filesystem::path tmp_config_path;
 
 		{
-			std::ofstream config_file(tmp_config_path);
+			std::ofstream config_file;
+
+			try
+			{
+				tmp_config_path = tmp_config_path_c_str.get();
+				config_file.open(tmp_config_path);
+			}
+			catch (const std::exception &)
+			{
+				tmp_config_path = tmp_config_path_c_str.get() + 1;
+				config_file.open(tmp_config_path);
+			}
 
 			config_file << "T1=TrUE" << std::endl;
 			config_file << " T2  =oN" << std::endl;

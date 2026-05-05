@@ -1,24 +1,37 @@
 #include "async.hpp"
 
+#include "utils.hpp"
+
 namespace async_lib
 {
-	std::suspend_never AsyncPromiseBase::initial_suspend() noexcept
+	FinalAwaitable::FinalAwaitable(
+		const std::optional<Handle> handle_to_be_resumed)
 	{
-		return {};
+		handle_to_be_resumed_ = handle_to_be_resumed;
 	}
 
-	std::suspend_always AsyncPromiseBase::final_suspend() noexcept
+	[[nodiscard]] FinalAwaitable::Handle FinalAwaitable::await_suspend(
+		Handle) const noexcept
 	{
-		return {};
+		if (handle_to_be_resumed_.has_value())
+		{
+			return *handle_to_be_resumed_;
+		}
+
+		return std::noop_coroutine();
 	}
 
-	void AsyncPromiseBase::unhandled_exception() const
+	bool FinalAwaitable::await_ready() const noexcept
+	{
+		return false;
+	}
+
+	void FinalAwaitable::await_resume() const noexcept
 	{
 	}
 
-	EventLoopManager::EventLoopManager()
+	EventLoopManager::EventLoopManager() : runner_(&EventLoopManager::run, this)
 	{
-		run();
 	}
 
 	EventLoopManager &EventLoopManager::get_instance()
@@ -27,30 +40,59 @@ namespace async_lib
 		return instance;
 	}
 
-	void EventLoopManager::add_async(const Handle &caller_handle)
+	void EventLoopManager::add_handle(const Handle handle)
 	{
-		std::lock_guard<std::mutex> lock(async_handles_mutex_);
-		async_handles_.push_back(caller_handle);
+		spdlog::debug("Adding a handle");
+		{
+			std::lock_guard lock(handles_mutex_);
+			handles_.emplace_back(handle);
+		}
+
+		wake_up_event_loop();
+	}
+
+	void EventLoopManager::wake_up_event_loop()
+	{
+		spdlog::debug("Waking up the event loop");
+		cv_.notify_one();
 	}
 
 	void EventLoopManager::run()
 	{
 		while (true)
 		{
-			std::lock_guard<std::mutex> lock(async_handles_mutex_);
-
-			for (auto it = async_handles_.begin(); it != async_handles_.end();)
+			std::unique_lock lock(handles_mutex_);
+			while (!handles_.empty())
 			{
-				if (it->done())
+				for (auto it = handles_.begin(); it != handles_.end();)
 				{
-					it->promise().caller_handle_.resume();
-					it = async_handles_.erase(it);
-					continue;
-				}
+					if (it->done())
+					{
+						it = handles_.erase(it);
+						continue;
+					}
 
-				it->resume();
-				it++;
+					if (it->promise().ready_to_be_resumed_)
+					{
+						const auto tmp = *it;
+						handles_.erase(it);
+
+						spdlog::debug("Resuming a handle");
+
+						lock.unlock(); // To avoid recursive locking vvv
+						tmp.resume();  // The resumed coroutine might add a
+									   // handle
+						lock.lock();
+
+						break; // Break since handles_ might've been modified
+					}
+
+					it++;
+				}
 			}
+
+			spdlog::debug("Putting the event loop to sleep");
+			cv_.wait(lock);
 		}
 	}
 } // namespace async_lib

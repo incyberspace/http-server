@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 4.0)
 
 project(HTTP)
 
+if (NOT WIN32)
+    message(FATAL_ERROR "This program is only for windows")
+endif ()
+
 add_library(HTTP_LIB STATIC
         src/server.cpp
         src/server.hpp
@@ -14,17 +18,17 @@ add_library(HTTP_LIB STATIC
         src/async.cpp
         src/async.hpp
 )
+
+set_target_properties(HTTP_LIB PROPERTIES CXX_EXTENSIONS OFF)
 target_compile_features(HTTP_LIB PUBLIC cxx_std_23)
-target_compile_options(HTTP_LIB PUBLIC -static -Wall -Wextra -pedantic-errors)
-target_link_options(HTTP_LIB PUBLIC -static -Wall -Wextra -pedantic-errors)
+
+target_compile_options(HTTP_LIB PUBLIC -Wall -Wextra -pedantic-errors -fno-omit-frame-pointer -Wno-aix-compat)
+target_link_options(HTTP_LIB PUBLIC)
 target_compile_definitions(HTTP_LIB PRIVATE UNICODE)
 
 add_subdirectory(spdlog)
 target_link_libraries(HTTP_LIB PUBLIC spdlog::spdlog)
-
-if (WIN32)
-    target_link_libraries(HTTP_LIB PRIVATE "ws2_32")
-endif ()
+target_link_libraries(HTTP_LIB PRIVATE "ws2_32")
 
 add_executable(HTTP src/main.cpp)
 target_link_libraries(HTTP PRIVATE HTTP_LIB)

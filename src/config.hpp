@@ -18,7 +18,6 @@ namespace config_lib
 		template <typename T>
 		friend bool operator==(const T &lhs, const ConfigProxy &rhs);
 
-	  private:
 		using ValueVariant = std::variant<int, std::string, bool>;
 
 	  public:
@@ -45,8 +44,8 @@ namespace config_lib
 	{
 	  public:
 		explicit Config(const std::filesystem::path &config_path);
-		ConfigProxy get(const std::string &key) const;
-		std::optional<ConfigProxy> try_get(const std::string &key) const;
+		[[nodiscard]] ConfigProxy get(const std::string &key) const;
+		[[nodiscard]] std::optional<ConfigProxy> try_get(const std::string &key) const;
 
 	  private:
 		std::unordered_map<std::string, ConfigProxy::ValueVariant> data_;

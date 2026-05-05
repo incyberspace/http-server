@@ -10,8 +10,7 @@ namespace test_lib
 {
 	TEST(config_test, read)
 	{
-		std::unique_ptr<const char[]> tmp_config_path_c_str;
-		tmp_config_path_c_str.reset(std::tmpnam(nullptr));
+		const char *const tmp_config_path_c_str = std::tmpnam(nullptr);
 		std::filesystem::path tmp_config_path;
 
 		{
@@ -19,12 +18,12 @@ namespace test_lib
 
 			try
 			{
-				tmp_config_path = tmp_config_path_c_str.get();
+				tmp_config_path = tmp_config_path_c_str;
 				config_file.open(tmp_config_path);
 			}
 			catch (const std::exception &)
 			{
-				tmp_config_path = tmp_config_path_c_str.get() + 1;
+				tmp_config_path = tmp_config_path_c_str;
 				config_file.open(tmp_config_path);
 			}
 

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.30)
 
 project(HTTP)
+enable_testing()
 
 if (NOT WIN32)
     message(FATAL_ERROR "This program is only for windows")

@@ -33,6 +33,5 @@
 *.app
 
 cmake_test_discovery*
-config.conf
+#config.conf
 .*/
-*.json

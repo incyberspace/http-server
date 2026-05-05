@@ -80,8 +80,7 @@ namespace http_lib
 	}
 
 	Server::Server(socket_lib::SockWrapper sock, const int sock_stream_buf_size)
-		: sock_stream_buf_size_(sock_stream_buf_size),
-		  sock_stream_(std::move(sock), sock_stream_buf_size),
+		: sock_stream_(std::move(sock), sock_stream_buf_size),
 		  runner_task_(run())
 	{
 	}

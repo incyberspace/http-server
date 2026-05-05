@@ -41,7 +41,6 @@ namespace http_lib
 		[[nodiscard]] bool is_done() const;
 
 	  private:
-		int sock_stream_buf_size_;
 		static constexpr int default_sock_stream_buf_size = 100;
 		socket_lib::SockStream sock_stream_;
 		async_lib::Task<void> runner_task_;

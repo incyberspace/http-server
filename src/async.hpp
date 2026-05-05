@@ -4,6 +4,7 @@
 #include <deque>
 #include <spdlog/spdlog.h>
 #include <utility>
+#include <thread>
 
 namespace async_lib
 {

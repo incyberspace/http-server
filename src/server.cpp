@@ -11,6 +11,39 @@
 #include "async.hpp"
 #include "config.hpp"
 
+namespace
+{
+	[[nodiscard]] bool is_directory_valid(
+		const std::filesystem::path &working_dir,
+		const std::filesystem::path &dir_to_be_checked);
+
+	bool is_directory_valid(const std::filesystem::path &working_dir,
+							const std::filesystem::path &dir_to_be_checked)
+	{
+		if (working_dir == dir_to_be_checked)
+		{
+			return true;
+		}
+
+		while (true)
+		{
+			const std::filesystem::path parent_dir = working_dir.parent_path();
+
+			if (parent_dir == working_dir)
+			{
+				return true;
+			}
+
+			if (parent_dir == working_dir.root_directory())
+			{
+				break;
+			}
+		}
+
+		return false;
+	}
+} // namespace
+
 namespace http_lib
 {
 	void spawn_servers()
@@ -168,29 +201,59 @@ namespace http_lib
 		static constexpr int fstream_buf_size = 1000000;
 		using namespace std::string_literals;
 
-		auto file_path = std::filesystem::path(
-			static_cast<std::string>(config_lib::config.get("WORKING_DIR")));
+		std::filesystem::path working_dir =
+			static_cast<std::string>(config_lib::config.get("WORKING_DIR"));
+		working_dir = std::filesystem::canonical(working_dir);
+		auto file_path = working_dir;
 
-		if (request.method.target.size() == 1)
+		if (request.method.target.substr(1).empty())
 		{
 			file_path /= "index.html";
 		}
 		else
 		{
-			file_path /= request.method.target.substr(1);
+			file_path = request.method.target.substr(1);
+
+			bool is_path_not_found = false;
+
+			try
+			{
+				file_path = std::filesystem::canonical(file_path);
+			}
+			catch (const std::exception &)
+			{
+				is_path_not_found = true;
+			}
+
+			if (is_path_not_found)
+			{
+				co_await send_error_status_code(ErrorStatusCode::NOT_FOUND);
+				co_return;
+			}
+
+			if (file_path == working_dir)
+			{
+				file_path /= "index.html";
+			}
+		}
+
+		if (is_directory(file_path) ||
+			!is_directory_valid(working_dir, file_path.parent_path()))
+		{
+			co_await send_error_status_code(ErrorStatusCode::FORBIDDEN);
+			co_return;
 		}
 
 		std::ifstream f(file_path, std::ios::binary);
 
+		// Might be redundant not sure
 		if (!f.is_open())
 		{
-			log_and_throw(
-				std::format("Failed to open {}", path_to_c_str(file_path)));
+			co_await send_error_status_code(ErrorStatusCode::NOT_FOUND);
+			co_return;
 		}
 
-		co_await sock_stream_.send_all_async(
-			"HTTP/1.1 200 OK\r\n"s); // Raw strings include a NUL thus don't
-									 // work
+		co_await sock_stream_.send_all_async("HTTP/1.1 200 OK\r\n"s);
 
 		f.seekg(0, std::ios::end);
 		const std::streamoff file_size = f.tellg();
@@ -211,6 +274,27 @@ namespace http_lib
 
 		co_await sock_stream_.send_all_async(
 			{buf.begin(), std::next(buf.begin(), f.gcount())});
+	}
+
+	async_lib::Task<void> Server::send_error_status_code(
+		const ErrorStatusCode status_code) const
+	{
+		using namespace std::string_literals;
+
+		switch (status_code)
+		{
+		case ErrorStatusCode::FORBIDDEN:
+			co_await sock_stream_.send_all_async("HTTP/1.1 403 Forbidden\r\n"s);
+			break;
+		case ErrorStatusCode::NOT_FOUND:
+			co_await sock_stream_.send_all_async("HTTP/1.1 404 Not Found\r\n"s);
+			break;
+		default:
+			std::unreachable();
+		}
+
+		co_await sock_stream_.send_all_async("Content-Length: 0\r\n"s);
+		co_await sock_stream_.send_all_async("\r\n"s);
 	}
 
 	async_lib::Task<void> Server::run()

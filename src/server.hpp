@@ -25,6 +25,12 @@ namespace http_lib
 		std::vector<char> body;
 	};
 
+	enum class ErrorStatusCode: int
+	{
+		FORBIDDEN,
+		NOT_FOUND
+	};
+
 	void spawn_servers();
 
 	class Server final
@@ -46,5 +52,7 @@ namespace http_lib
 		async_lib::Task<void> runner_task_;
 		[[nodiscard]] async_lib::Task<Request> get_request();
 		[[nodiscard]] async_lib::Task<void> send_response(const Request &request) const;
+		async_lib::Task<void> send_error_status_code(
+			ErrorStatusCode status_code) const;
 	};
 } // namespace http_lib

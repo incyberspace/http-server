@@ -207,6 +207,7 @@ namespace socket_lib
 	async_lib::Task<void> SockStream::send_all_async(
 		const std::span<const char> &data) const
 	{
+		assert(data.size() == 0 || data.back() != '\0');
 		int total_sent_bytes = 0;
 
 		while (total_sent_bytes < static_cast<int>(data.size()))

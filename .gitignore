@@ -35,3 +35,5 @@
 cmake_test_discovery*
 #config.conf
 .*/
+compile_commands.json
+build/

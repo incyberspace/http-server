@@ -7,6 +7,8 @@ if (NOT WIN32)
     message(FATAL_ERROR "This program is only for windows")
 endif ()
 
+SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 add_library(HTTP_LIB STATIC
         src/server.cpp
         src/server.hpp
@@ -23,13 +25,17 @@ add_library(HTTP_LIB STATIC
 set_target_properties(HTTP_LIB PROPERTIES CXX_EXTENSIONS OFF)
 target_compile_features(HTTP_LIB PUBLIC cxx_std_23)
 
-target_compile_options(HTTP_LIB PUBLIC -Wall -Wextra -pedantic-errors -fno-omit-frame-pointer -Wno-aix-compat)
+if (MINGW)
+    target_compile_options(HTTP_LIB PUBLIC -Wall -Wextra -pedantic-errors -fno-omit-frame-pointer -Wno-aix-compat)
+endif ()
+
 target_link_options(HTTP_LIB PUBLIC)
 target_compile_definitions(HTTP_LIB PRIVATE UNICODE)
 
 add_subdirectory(spdlog)
 target_link_libraries(HTTP_LIB PUBLIC spdlog::spdlog)
 target_link_libraries(HTTP_LIB PRIVATE "ws2_32")
+target_include_directories(HTTP_LIB PUBLIC HTTPRequest/include)
 
 add_executable(HTTP src/main.cpp)
 target_link_libraries(HTTP PRIVATE HTTP_LIB)
@@ -40,6 +46,12 @@ add_subdirectory(googletest)
 
 add_executable(TEST src/test.cpp)
 target_compile_features(TEST PUBLIC cxx_std_23)
-target_compile_options(TEST PRIVATE -Wall -Wextra -pedantic-errors)
+
+if (MINGW)
+    target_compile_options(TEST PRIVATE -Wall -Wextra -pedantic-errors)
+endif ()
+
 target_link_libraries(TEST PRIVATE GTest::gtest_main HTTP_LIB)
 gtest_discover_tests(TEST WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_custom_target(COPY_COMPILE_COMMANDS ALL COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/compile_commands.json ${CMAKE_SOURCE_DIR})

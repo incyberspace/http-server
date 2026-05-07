@@ -13,318 +13,344 @@
 
 namespace
 {
-	[[nodiscard]] bool is_directory_valid(
-		const std::filesystem::path &working_dir,
-		const std::filesystem::path &dir_to_be_checked);
+    [[nodiscard]] bool is_directory_valid(
+        const std::filesystem::path &working_dir,
+        const std::filesystem::path &dir_to_be_checked);
+    void start_spawn_servers_func();
 
-	bool is_directory_valid(const std::filesystem::path &working_dir,
-							const std::filesystem::path &dir_to_be_checked)
-	{
-		if (working_dir == dir_to_be_checked)
-		{
-			return true;
-		}
+    bool is_directory_valid(const std::filesystem::path &working_dir,
+                            const std::filesystem::path &dir_to_be_checked)
+    {
+        if (working_dir == dir_to_be_checked)
+        {
+            return true;
+        }
 
-		while (true)
-		{
-			const std::filesystem::path parent_dir = working_dir.parent_path();
+        while (true)
+        {
+            const std::filesystem::path parent_dir = working_dir.parent_path();
 
-			if (parent_dir == working_dir)
-			{
-				return true;
-			}
+            if (parent_dir == working_dir)
+            {
+                return true;
+            }
 
-			if (parent_dir == working_dir.root_directory())
-			{
-				break;
-			}
-		}
+            if (parent_dir == working_dir.root_directory())
+            {
+                break;
+            }
+        }
 
-		return false;
-	}
+        return false;
+    }
+
+    void start_spawn_servers_func()
+    {
+        const socket_lib::SockWrapper listen_sock =
+            socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (listen_sock.get() == INVALID_SOCKET)
+        {
+            log_and_throw(
+                std::format("Could not create listening socket. Reason : {}",
+                            utils_lib::get_last_error_as_str()));
+        }
+
+        sockaddr_in addr_info = {};
+        addr_info.sin_family = AF_INET;
+        addr_info.sin_port =
+            htons(static_cast<int>(config_lib::config.get("PORT")));
+        inet_pton(
+            AF_INET,
+            static_cast<std::string>(config_lib::config.get("LISTEN")).c_str(),
+            &addr_info.sin_addr);
+
+        if (bind(listen_sock.get(), reinterpret_cast<sockaddr *>(&addr_info),
+                 sizeof addr_info) == SOCKET_ERROR)
+        {
+            log_and_throw(std::format("Bind failed. Reason : {}",
+                                      utils_lib::get_last_error_as_str()));
+        }
+
+        if (listen(listen_sock.get(), SOMAXCONN) == SOCKET_ERROR)
+        {
+            log_and_throw(std::format("Listen failed. Reason : {}",
+                                      utils_lib::get_last_error_as_str()));
+        }
+
+        std::vector<std::unique_ptr<http_lib::Server>> spawned_servers;
+
+        while (http_lib::spawn_servers)
+        {
+            spdlog::debug("Server count : {}", spawned_servers.size());
+            socket_lib::SockWrapper accept_sock =
+                accept(listen_sock.get(), nullptr, nullptr);
+
+            if (accept_sock.get() == INVALID_SOCKET)
+            {
+                spdlog::error("Accept failed. Reason : {}",
+                              utils_lib::get_last_error_as_str());
+                break;
+            }
+
+            u_long socket_mode = 1;
+            if (ioctlsocket(accept_sock.get(), FIONBIO, &socket_mode) != 0)
+            {
+                spdlog::error("ioctlsocket failed. Reason : {}",
+                              utils_lib::get_last_error_as_str());
+                break;
+            }
+
+            std::erase_if(
+                spawned_servers,
+                [](const std::unique_ptr<http_lib::Server> &server) -> bool {
+                    return server->is_done();
+                });
+            spdlog::info("Accepted");
+            spawned_servers.emplace_back(std::make_unique<http_lib::Server>(
+                std::move(accept_sock), 100000));
+        }
+    }
 } // namespace
 
 namespace http_lib
 {
-	void spawn_servers()
-	{
-		const socket_lib::SockWrapper listen_sock =
-			socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-		if (listen_sock.get() == INVALID_SOCKET)
-		{
-			log_and_throw(
-				std::format("Could not create listening socket. Reason : {}",
-							utils_lib::get_last_error_as_str()));
-		}
+    void start_spawning_servers()
+    {
+        server_spawner = std::jthread(start_spawn_servers_func);
+    }
 
-		sockaddr_in addr_info = {};
-		addr_info.sin_family = AF_INET;
-		addr_info.sin_port =
-			htons(static_cast<int>(config_lib::config.get("PORT")));
-		inet_pton(
-			AF_INET,
-			static_cast<std::string>(config_lib::config.get("LISTEN")).c_str(),
-			&addr_info.sin_addr);
+    void stop_spawning_servers()
+    {
+        spawn_servers = false;
+    }
 
-		if (bind(listen_sock.get(), reinterpret_cast<sockaddr *>(&addr_info),
-				 sizeof addr_info) == SOCKET_ERROR)
-		{
-			log_and_throw(std::format("Bind failed. Reason : {}",
-									  utils_lib::get_last_error_as_str()));
-		}
+    Server::Server(socket_lib::SockWrapper sock,
+                   const int sock_stream_buf_size)
+        : sock_stream_(std::move(sock), sock_stream_buf_size),
+          runner_task_(run())
+    {
+    }
 
-		if (listen(listen_sock.get(), SOMAXCONN) == SOCKET_ERROR)
-		{
-			log_and_throw(std::format("Listen failed. Reason : {}",
-									  utils_lib::get_last_error_as_str()));
-		}
+    void Server::resume() const
+    {
+        runner_task_.resume();
+    }
 
-		std::vector<std::unique_ptr<Server>> spawned_servers;
+    bool Server::is_done() const
+    {
+        return runner_task_.is_done();
+    }
 
-		do
-		{
-			spdlog::debug("Server count : {}", spawned_servers.size());
-			socket_lib::SockWrapper accept_sock =
-				accept(listen_sock.get(), nullptr, nullptr);
+    async_lib::Task<Request> Server::get_request()
+    {
+        static const std::regex re{R"((\S+) (\S+?)(?:\?(\S+))? HTTP\/(\S+))"};
 
-			if (accept_sock.get() == INVALID_SOCKET)
-			{
-				spdlog::error("Accept failed. Reason : {}",
-							  utils_lib::get_last_error_as_str());
-				break;
-			}
+        std::string line;
+        line = co_await sock_stream_.read_line_async();
 
-			u_long socket_mode = 1;
-			if (ioctlsocket(accept_sock.get(), FIONBIO, &socket_mode) != 0)
-			{
-				spdlog::error("ioctlsocket failed. Reason : {}",
-							  utils_lib::get_last_error_as_str());
-				break;
-			}
+        std::smatch tokens;
+        std::regex_search(line, tokens, re);
 
-			std::erase_if(spawned_servers,
-						  [](const std::unique_ptr<Server> &server) -> bool {
-							  return server->is_done();
-						  });
-			spdlog::info("Accepted");
-			spawned_servers.emplace_back(
-				std::make_unique<Server>(std::move(accept_sock), 100000));
-		} while (true);
-	}
+        if (tokens.size() != 5)
+        {
+            spdlog::warn("An invalid request line {}", line);
+            co_return {};
+        }
 
-	Server::Server(socket_lib::SockWrapper sock, const int sock_stream_buf_size)
-		: sock_stream_(std::move(sock), sock_stream_buf_size),
-		  runner_task_(run())
-	{
-	}
+        Method method;
+        method.type = tokens[1];
+        method.target = tokens[2];
 
-	void Server::resume() const
-	{
-		runner_task_.resume();
-	}
+        std::unordered_map<std::string, std::string> queries;
+        std::stringstream ss(tokens[3]);
 
-	bool Server::is_done() const
-	{
-		return runner_task_.is_done();
-	}
+        std::string query;
+        while (getline(ss, query, '&'))
+        {
+            const auto equal_it = query.find('=');
+            queries[query.substr(0, equal_it)] = query.substr(equal_it + 1);
+        }
 
-	async_lib::Task<Request> Server::get_request()
-	{
-		static const std::regex re{R"((\S+) (\S+?)(?:\?(\S+))? HTTP\/(\S+))"};
+        method.queries = std::move(queries);
+        method.http_version = tokens[4];
 
-		std::string line;
-		line = co_await sock_stream_.read_line_async();
+        Request result;
+        result.method = std::move(method);
 
-		std::smatch tokens;
-		std::regex_search(line, tokens, re);
+        while (true)
+        {
+            line = co_await sock_stream_.read_line_async();
 
-		if (tokens.size() != 5)
-		{
-			spdlog::warn("An invalid request line {}", line);
-			co_return {};
-		}
+            if (line.empty())
+            {
+                break;
+            }
 
-		Method method;
-		method.type = tokens[1];
-		method.target = tokens[2];
+            const auto colon_it = line.find(':');
 
-		std::unordered_map<std::string, std::string> queries;
-		std::stringstream ss(tokens[3]);
+            std::string key = line.substr(0, colon_it);
+            utils_lib::strip(key);
+            key = key | std::views::transform([](const char ch) -> char {
+                      return static_cast<char>(tolower(ch));
+                  }) |
+                  std::ranges::to<std::string>();
+            std::string value = line.substr(colon_it + 1);
+            utils_lib::strip(value);
 
-		std::string query;
-		while (getline(ss, query, '&'))
-		{
-			const auto equal_it = query.find('=');
-			queries[query.substr(0, equal_it)] = query.substr(equal_it + 1);
-		}
+            result.headers[key] = value;
+        }
 
-		method.queries = std::move(queries);
-		method.http_version = tokens[4];
+        if (result.headers.contains("content-length"))
+        {
+            result.body = co_await sock_stream_.read_all_async(
+                std::stoi(result.headers.at("content-length")));
+        }
 
-		Request result;
-		result.method = std::move(method);
+        co_return result;
+    }
 
-		while (true)
-		{
-			line = co_await sock_stream_.read_line_async();
+    async_lib::Task<void> Server::send_response(const Request &request) const
+    {
+        static constexpr int fstream_buf_size = 1000000;
+        using namespace std::string_literals;
 
-			if (line.empty())
-			{
-				break;
-			}
+        if (request.method.type != "GET")
+        {
+            co_await send_error_status_code(
+                ErrorStatusCode::METHOD_NOT_ALLOWED);
+            co_return;
+        }
 
-			const auto colon_it = line.find(':');
+        std::filesystem::path working_dir =
+            static_cast<std::string>(config_lib::config.get("WORKING_DIR"));
+        working_dir = std::filesystem::canonical(working_dir);
+        auto file_path = working_dir;
 
-			std::string key = line.substr(0, colon_it);
-			utils_lib::strip(key);
-			key = key | std::views::transform([](const char ch) -> char {
-					  return static_cast<char>(tolower(ch));
-				  }) |
-				  std::ranges::to<std::string>();
-			std::string value = line.substr(colon_it + 1);
-			utils_lib::strip(value);
+        if (request.method.target.substr(1).empty())
+        {
+            file_path /= "index.html";
+        }
+        else
+        {
+            file_path = request.method.target.substr(1);
 
-			result.headers[key] = value;
-		}
+            bool is_path_not_found = false;
 
-		if (result.headers.contains("content-length"))
-		{
-			result.body = co_await sock_stream_.read_all_async(
-				std::stoi(result.headers.at("content-length")));
-		}
+            try
+            {
+                file_path = std::filesystem::canonical(file_path);
+            }
+            catch (const std::exception &)
+            {
+                is_path_not_found = true;
+            }
 
-		co_return result;
-	}
+            if (is_path_not_found)
+            {
+                co_await send_error_status_code(ErrorStatusCode::NOT_FOUND);
+                co_return;
+            }
 
-	async_lib::Task<void> Server::send_response(const Request &request) const
-	{
-		static constexpr int fstream_buf_size = 1000000;
-		using namespace std::string_literals;
+            if (file_path == working_dir)
+            {
+                file_path /= "index.html";
+            }
+        }
 
-		std::filesystem::path working_dir =
-			static_cast<std::string>(config_lib::config.get("WORKING_DIR"));
-		working_dir = std::filesystem::canonical(working_dir);
-		auto file_path = working_dir;
+        if (is_directory(file_path) ||
+            !is_directory_valid(working_dir, file_path.parent_path()))
+        {
+            co_await send_error_status_code(ErrorStatusCode::FORBIDDEN);
+            co_return;
+        }
 
-		if (request.method.target.substr(1).empty())
-		{
-			file_path /= "index.html";
-		}
-		else
-		{
-			file_path = request.method.target.substr(1);
+        std::ifstream f(file_path, std::ios::binary);
 
-			bool is_path_not_found = false;
+        // Might be redundant not sure
+        if (!f.is_open())
+        {
+            co_await send_error_status_code(ErrorStatusCode::NOT_FOUND);
+            co_return;
+        }
 
-			try
-			{
-				file_path = std::filesystem::canonical(file_path);
-			}
-			catch (const std::exception &)
-			{
-				is_path_not_found = true;
-			}
+        co_await sock_stream_.send_all_async("HTTP/1.1 200 OK\r\n"s);
 
-			if (is_path_not_found)
-			{
-				co_await send_error_status_code(ErrorStatusCode::NOT_FOUND);
-				co_return;
-			}
+        f.seekg(0, std::ios::end);
+        const std::streamoff file_size = f.tellg();
+        f.seekg(0, std::ios::beg);
 
-			if (file_path == working_dir)
-			{
-				file_path /= "index.html";
-			}
-		}
+        co_await sock_stream_.send_all_async(
+            std::format("Content-Length: {}\r\n", file_size));
 
-		if (is_directory(file_path) ||
-			!is_directory_valid(working_dir, file_path.parent_path()))
-		{
-			co_await send_error_status_code(ErrorStatusCode::FORBIDDEN);
-			co_return;
-		}
+        std::vector<char> buf;
+        buf.resize(fstream_buf_size);
 
-		std::ifstream f(file_path, std::ios::binary);
+        co_await sock_stream_.send_all_async("\r\n"s);
 
-		// Might be redundant not sure
-		if (!f.is_open())
-		{
-			co_await send_error_status_code(ErrorStatusCode::NOT_FOUND);
-			co_return;
-		}
+        while (f.read(buf.data(), static_cast<std::streamsize>(buf.size())))
+        {
+            co_await sock_stream_.send_all_async(buf);
+        }
 
-		co_await sock_stream_.send_all_async("HTTP/1.1 200 OK\r\n"s);
+        co_await sock_stream_.send_all_async(
+            {buf.begin(), std::next(buf.begin(), f.gcount())});
+    }
 
-		f.seekg(0, std::ios::end);
-		const std::streamoff file_size = f.tellg();
-		f.seekg(0, std::ios::beg);
+    async_lib::Task<void> Server::send_error_status_code(
+        const ErrorStatusCode status_code) const
+    {
+        using namespace std::string_literals;
 
-		co_await sock_stream_.send_all_async(
-			std::format("Content-Length: {}\r\n", file_size));
+        std::string msg;
 
-		std::vector<char> buf;
-		buf.resize(fstream_buf_size);
+        switch (status_code)
+        {
+        case ErrorStatusCode::FORBIDDEN:
+            msg = "403 Forbidden";
+            break;
+        case ErrorStatusCode::NOT_FOUND:
+            msg = "404 Not Found";
+            break;
+        case ErrorStatusCode::METHOD_NOT_ALLOWED:
+            msg = "405 Method Not Allowed";
+            break;
+        default:
+            std::unreachable();
+        }
 
-		co_await sock_stream_.send_all_async("\r\n"s);
+        co_await sock_stream_.send_all_async("HTTP/1.1 " + msg + "\r\n");
+        co_await sock_stream_.send_all_async("Content-Length: 0\r\n"s);
+        co_await sock_stream_.send_all_async("\r\n"s);
+    }
 
-		while (f.read(buf.data(), static_cast<std::streamsize>(buf.size())))
-		{
-			co_await sock_stream_.send_all_async(buf);
-		}
+    async_lib::Task<void> Server::run()
+    {
+        while (true)
+        {
+            Request request;
+            try
+            {
+                request = co_await get_request();
+            }
+            catch (std::exception &e)
+            {
+                spdlog::debug("get_request() failed : {}", e.what());
+                break;
+            }
 
-		co_await sock_stream_.send_all_async(
-			{buf.begin(), std::next(buf.begin(), f.gcount())});
-	}
+            try
+            {
+                co_await send_response(request);
+            }
+            catch (std::exception &e)
+            {
+                spdlog::debug("send_response() failed : {}", e.what());
+                break;
+            }
 
-	async_lib::Task<void> Server::send_error_status_code(
-		const ErrorStatusCode status_code) const
-	{
-		using namespace std::string_literals;
+            co_await async_lib::Task<void>::ScheduleResume();
+        }
 
-		switch (status_code)
-		{
-		case ErrorStatusCode::FORBIDDEN:
-			co_await sock_stream_.send_all_async("HTTP/1.1 403 Forbidden\r\n"s);
-			break;
-		case ErrorStatusCode::NOT_FOUND:
-			co_await sock_stream_.send_all_async("HTTP/1.1 404 Not Found\r\n"s);
-			break;
-		default:
-			std::unreachable();
-		}
-
-		co_await sock_stream_.send_all_async("Content-Length: 0\r\n"s);
-		co_await sock_stream_.send_all_async("\r\n"s);
-	}
-
-	async_lib::Task<void> Server::run()
-	{
-		while (true)
-		{
-			Request request;
-			try
-			{
-				request = co_await get_request();
-			}
-			catch (std::exception &e)
-			{
-				spdlog::debug("get_request() failed : {}", e.what());
-				break;
-			}
-
-			try
-			{
-				co_await send_response(request);
-			}
-			catch (std::exception &e)
-			{
-				spdlog::debug("send_response() failed : {}", e.what());
-				break;
-			}
-
-			co_await async_lib::Task<void>::ScheduleResume();
-		}
-
-		spdlog::debug("The server loop has ended");
-	}
+        spdlog::debug("The server loop has ended");
+    }
 } // namespace http_lib

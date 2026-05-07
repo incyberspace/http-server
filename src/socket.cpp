@@ -4,224 +4,240 @@
 #include "utils.hpp"
 
 #include <cassert>
-#include <future>
 #include <ranges>
 #include <utility>
 
 namespace socket_lib
 {
-	SockWrapper::SockWrapper(const SOCKET sock) : sock_(sock)
-	{
-	}
+    void init_socket()
+    {
+        WSADATA wsa_data;
 
-	SockWrapper::~SockWrapper()
-	{
-		if (!is_moved_from_)
-		{
-			closesocket(sock_);
-		}
-	}
+        if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0)
+        {
+            log_and_throw(std::format("WSAStartup failed. Reason : {}",
+                                      utils_lib::get_last_error_as_str()));
+        }
 
-	SockWrapper::SockWrapper(SockWrapper &&other) noexcept : sock_(other.sock_)
-	{
-		other.is_moved_from_ = true;
-	}
+        if (LOBYTE(wsa_data.wVersion) != 2 || HIBYTE(wsa_data.wVersion) != 2)
+        {
+            log_and_throw("Version 2.2 of Winsock is not available.");
+        }
+    }
 
-	SockWrapper &SockWrapper::operator=(SockWrapper &&other) noexcept
-	{
-		if (this == &other)
-		{
-			return *this;
-		}
+    SockWrapper::SockWrapper(const SOCKET sock) : sock_(sock)
+    {
+    }
 
-		if (!is_moved_from_)
-		{
-			closesocket(sock_);
-		}
+    SockWrapper::~SockWrapper()
+    {
+        if (!is_moved_from_)
+        {
+            closesocket(sock_);
+        }
+    }
 
-		sock_ = other.sock_;
-		other.is_moved_from_ = true;
+    SockWrapper::SockWrapper(SockWrapper &&other) noexcept : sock_(other.sock_)
+    {
+        other.is_moved_from_ = true;
+    }
 
-		return *this;
-	}
+    SockWrapper &SockWrapper::operator=(SockWrapper &&other) noexcept
+    {
+        if (this == &other)
+        {
+            return *this;
+        }
 
-	SOCKET SockWrapper::get() const
-	{
-		return sock_;
-	}
+        if (!is_moved_from_)
+        {
+            closesocket(sock_);
+        }
 
-	SockStream::SockStream(SockWrapper sock, const int buf_size)
-		: buf_size_(buf_size), sock_(std::move(sock)),
-		  read_queue_mutex_(std::make_unique<std::mutex>())
-	{
-	}
+        sock_ = other.sock_;
+        other.is_moved_from_ = true;
 
-	std::vector<char> SockStream::read_no_lock(const int size)
-	{
-		const int bytes_to_read_from_queue = static_cast<int>(
-			static_cast<int>(read_queue_.size()) > size ? size
-														: read_queue_.size());
-		std::vector<char> result;
+        return *this;
+    }
 
-		result.insert(result.end(), read_queue_.begin(),
-					  std::next(read_queue_.begin(), bytes_to_read_from_queue));
-		read_queue_.erase(
-			read_queue_.begin(),
-			std::next(read_queue_.begin(), bytes_to_read_from_queue));
+    SOCKET SockWrapper::get() const
+    {
+        return sock_;
+    }
 
-		const int remaining_bytes = size - bytes_to_read_from_queue;
-		assert(remaining_bytes >= 0);
+    SockStream::SockStream(SockWrapper sock, const int buf_size)
+        : buf_size_(buf_size), sock_(std::move(sock)),
+          read_queue_mutex_(std::make_unique<std::mutex>())
+    {
+    }
 
-		std::vector<char> buf;
-		buf.resize(remaining_bytes);
+    std::vector<char> SockStream::read_no_lock(const int size)
+    {
+        const int bytes_to_read_from_queue = static_cast<int>(
+            static_cast<int>(read_queue_.size()) > size ? size
+                                                        : read_queue_.size());
+        std::vector<char> result;
 
-		const int read_bytes =
-			recv(sock_.get(), buf.data(), remaining_bytes, 0);
-		if (read_bytes < 0)
-		{
-			if (WSAGetLastError() == WSAEWOULDBLOCK)
-			{
-				return result;
-			}
+        result.insert(
+            result.end(), read_queue_.begin(),
+            std::next(read_queue_.begin(), bytes_to_read_from_queue));
+        read_queue_.erase(
+            read_queue_.begin(),
+            std::next(read_queue_.begin(), bytes_to_read_from_queue));
 
-			log_and_throw(std::format("recv failed. Reason : {}",
-									  utils_lib::get_last_error_as_str()));
-		}
+        const int remaining_bytes = size - bytes_to_read_from_queue;
+        assert(remaining_bytes >= 0);
 
-		result.insert(result.end(), buf.begin(),
-					  std::next(buf.begin(), read_bytes));
+        std::vector<char> buf;
+        buf.resize(remaining_bytes);
 
-		return result;
-	}
+        const int read_bytes =
+            recv(sock_.get(), buf.data(), remaining_bytes, 0);
+        if (read_bytes < 0)
+        {
+            if (WSAGetLastError() == WSAEWOULDBLOCK)
+            {
+                return result;
+            }
 
-	std::vector<char> SockStream::read(const int size)
-	{
-		std::lock_guard lock(*read_queue_mutex_);
-		return read_no_lock(size);
-	}
+            log_and_throw(std::format("recv failed. Reason : {}",
+                                      utils_lib::get_last_error_as_str()));
+        }
 
-	async_lib::Task<std::vector<char>> SockStream::read_all_async_no_lock(
-		const int size)
-	{
-		int total_read_bytes = 0;
-		std::vector<char> result;
+        result.insert(result.end(), buf.begin(),
+                      std::next(buf.begin(), read_bytes));
 
-		while (total_read_bytes < size)
-		{
-			const int remaining_bytes = size - total_read_bytes;
-			std::vector<char> buf = read_no_lock(
-				remaining_bytes > buf_size_ ? buf_size_ : remaining_bytes);
-			total_read_bytes += static_cast<int>(buf.size());
-			result.insert(result.end(), buf.begin(), buf.end());
+        return result;
+    }
 
-			spdlog::debug("Scheduling resume");
-			co_await async_lib::Task<std::vector<char>>::ScheduleResume();
-			spdlog::debug("Resumed");
-		}
-		assert(total_read_bytes == size);
+    std::vector<char> SockStream::read(const int size)
+    {
+        std::lock_guard lock(*read_queue_mutex_);
+        return read_no_lock(size);
+    }
 
-		co_return result;
-	}
+    async_lib::Task<std::vector<char>> SockStream::read_all_async_no_lock(
+        const int size)
+    {
+        int total_read_bytes = 0;
+        std::vector<char> result;
 
-	async_lib::Task<std::vector<char>> SockStream::read_all_async(
-		const int size)
-	{
-		std::lock_guard lock(*read_queue_mutex_);
-		return read_all_async_no_lock(size);
-	}
+        while (total_read_bytes < size)
+        {
+            const int remaining_bytes = size - total_read_bytes;
+            std::vector<char> buf = read_no_lock(
+                remaining_bytes > buf_size_ ? buf_size_ : remaining_bytes);
+            total_read_bytes += static_cast<int>(buf.size());
+            result.insert(result.end(), buf.begin(), buf.end());
 
-	async_lib::Task<std::string> SockStream::read_line_async()
-	{
-		std::string result;
+            spdlog::debug("Scheduling resume");
+            co_await async_lib::Task<std::vector<char>>::ScheduleResume();
+            spdlog::debug("Resumed");
+        }
+        assert(total_read_bytes == size);
 
-		while (true)
-		{
-			{
-				std::lock_guard lock(*read_queue_mutex_);
-				const std::vector<char> buf = read_no_lock(buf_size_);
-				if (const auto cr_it =
-						std::ranges::find(buf.begin(), buf.end(), '\r');
-					cr_it != buf.end())
-				{
-					result.insert(result.end(), buf.begin(), cr_it);
+        co_return result;
+    }
 
-					if (const auto lf_it =
-							std::ranges::find(buf.begin(), buf.end(), '\n');
-						lf_it == buf.end())
-					{
-						const auto ret = co_await read_all_async_no_lock(
-							1); // Reads '\n' from the socket
-						assert(ret.size() == 1 && ret[0] == '\n');
-						read_queue_.insert(read_queue_.end(),
-										   std::next(cr_it, 1), buf.end());
-					}
-					else
-					{
-						read_queue_.insert(read_queue_.end(),
-										   std::next(cr_it, 2), buf.end());
-					}
+    async_lib::Task<std::vector<char>> SockStream::read_all_async(
+        const int size)
+    {
+        std::lock_guard lock(*read_queue_mutex_);
+        return read_all_async_no_lock(size);
+    }
 
-					break;
-				}
+    async_lib::Task<std::string> SockStream::read_line_async()
+    {
+        std::string result;
 
-				if (const auto lf_it =
-						std::ranges::find(buf.begin(), buf.end(), '\n');
-					lf_it != buf.end())
-				{
-					result.insert(result.end(), buf.begin(), lf_it);
-					read_queue_.insert(read_queue_.end(), std::next(lf_it),
-									   buf.end());
-					break;
-				}
+        while (true)
+        {
+            {
+                std::lock_guard lock(*read_queue_mutex_);
+                const std::vector<char> buf = read_no_lock(buf_size_);
+                if (const auto cr_it =
+                        std::ranges::find(buf.begin(), buf.end(), '\r');
+                    cr_it != buf.end())
+                {
+                    result.insert(result.end(), buf.begin(), cr_it);
 
-				result.insert(result.end(), buf.begin(), buf.end());
-			}
+                    if (const auto lf_it =
+                            std::ranges::find(buf.begin(), buf.end(), '\n');
+                        lf_it == buf.end())
+                    {
+                        const auto ret = co_await read_all_async_no_lock(
+                            1); // Reads '\n' from the socket
+                        assert(ret.size() == 1 && ret[0] == '\n');
+                        read_queue_.insert(read_queue_.end(),
+                                           std::next(cr_it, 1), buf.end());
+                    }
+                    else
+                    {
+                        read_queue_.insert(read_queue_.end(),
+                                           std::next(cr_it, 2), buf.end());
+                    }
 
-			spdlog::debug("Scheduling resume");
-			co_await async_lib::Task<std::string>::ScheduleResume();
-			spdlog::debug("Resumed");
-		}
+                    break;
+                }
 
-		co_return result;
-	}
+                if (const auto lf_it =
+                        std::ranges::find(buf.begin(), buf.end(), '\n');
+                    lf_it != buf.end())
+                {
+                    result.insert(result.end(), buf.begin(), lf_it);
+                    read_queue_.insert(read_queue_.end(), std::next(lf_it),
+                                       buf.end());
+                    break;
+                }
 
-	int SockStream::send(const std::span<const char> &data) const
-	{
-		const int sent_bytes =
-			::send(sock_.get(), data.data(), static_cast<int>(data.size()), 0);
+                result.insert(result.end(), buf.begin(), buf.end());
+            }
 
-		if (sent_bytes < 0)
-		{
-			if (WSAGetLastError() == WSAEWOULDBLOCK)
-			{
-				return 0;
-			}
+            spdlog::debug("Scheduling resume");
+            co_await async_lib::Task<std::string>::ScheduleResume();
+            spdlog::debug("Resumed");
+        }
 
-			log_and_throw(std::format("send failed. Reason : {}",
-									  utils_lib::get_last_error_as_str()));
-		}
+        co_return result;
+    }
 
-		return sent_bytes;
-	}
+    int SockStream::send(const std::span<const char> &data) const
+    {
+        const int sent_bytes =
+            ::send(sock_.get(), data.data(), static_cast<int>(data.size()), 0);
 
-	async_lib::Task<void> SockStream::send_all_async(
-		const std::span<const char> &data) const
-	{
-		assert(data.size() == 0 || data.back() != '\0');
-		int total_sent_bytes = 0;
+        if (sent_bytes < 0)
+        {
+            if (WSAGetLastError() == WSAEWOULDBLOCK)
+            {
+                return 0;
+            }
 
-		while (total_sent_bytes < static_cast<int>(data.size()))
-		{
-			const int remaining_bytes =
-				static_cast<int>(data.size()) - total_sent_bytes;
-			total_sent_bytes +=
-				send({std::next(data.begin(), total_sent_bytes),
-					  std::next(data.begin(),
-								total_sent_bytes + (buf_size_ > remaining_bytes
-														? remaining_bytes
-														: buf_size_))});
-			co_await async_lib::Task<void>::ScheduleResume();
-		}
-		assert(total_sent_bytes == static_cast<int>(data.size()));
-	}
+            log_and_throw(std::format("send failed. Reason : {}",
+                                      utils_lib::get_last_error_as_str()));
+        }
+
+        return sent_bytes;
+    }
+
+    async_lib::Task<void> SockStream::send_all_async(
+        const std::span<const char> &data) const
+    {
+        assert(data.size() == 0 || data.back() != '\0');
+        int total_sent_bytes = 0;
+
+        while (total_sent_bytes < static_cast<int>(data.size()))
+        {
+            const int remaining_bytes =
+                static_cast<int>(data.size()) - total_sent_bytes;
+            total_sent_bytes +=
+                send({std::next(data.begin(), total_sent_bytes),
+                      std::next(data.begin(),
+                                total_sent_bytes + (buf_size_ > remaining_bytes
+                                                        ? remaining_bytes
+                                                        : buf_size_))});
+            co_await async_lib::Task<void>::ScheduleResume();
+        }
+        assert(total_sent_bytes == static_cast<int>(data.size()));
+    }
 } // namespace socket_lib

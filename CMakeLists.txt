@@ -35,6 +35,7 @@ target_compile_definitions(HTTP_LIB PRIVATE UNICODE)
 add_subdirectory(spdlog)
 target_link_libraries(HTTP_LIB PUBLIC spdlog::spdlog)
 
+set(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO OFF CACHE BOOL "" FORCE)
 add_subdirectory(cpp-httplib)
 target_link_libraries(HTTP_LIB PUBLIC httplib::httplib)
 

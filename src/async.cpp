@@ -31,8 +31,9 @@ namespace async_lib
 	{
 	}
 
-	EventLoopManager::EventLoopManager() : runner_(&EventLoopManager::run, this)
+	EventLoopManager::EventLoopManager()
 	{
+		start_event_loop();
 	}
 
 	EventLoopManager &EventLoopManager::get_instance()
@@ -60,18 +61,19 @@ namespace async_lib
 
 	void EventLoopManager::start_event_loop()
 	{
-		run_event_loop_flag = true;
-		cv_.notify_one();
+		runner_ = std::jthread(&EventLoopManager::run, this);
 	}
+
 	void EventLoopManager::end_event_loop()
 	{
-		cv_.notify_one();
 		run_event_loop_flag = false;
+		cv_.notify_one();
+		runner_.join();
 	}
 
 	void EventLoopManager::run()
 	{
-		while (run_event_loop_flag)
+		while (true)
 		{
 			std::unique_lock lock(handles_mutex_);
 			while (!handles_.empty() && run_event_loop_flag)
@@ -101,6 +103,11 @@ namespace async_lib
 
 					it++;
 				}
+			}
+
+			if (!run_event_loop_flag)
+			{
+				break;
 			}
 
 			spdlog::debug("Putting the event loop to sleep");

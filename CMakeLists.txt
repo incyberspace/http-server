@@ -34,8 +34,11 @@ target_compile_definitions(HTTP_LIB PRIVATE UNICODE)
 
 add_subdirectory(spdlog)
 target_link_libraries(HTTP_LIB PUBLIC spdlog::spdlog)
+
+add_subdirectory(cpp-httplib)
+target_link_libraries(HTTP_LIB PUBLIC httplib::httplib)
+
 target_link_libraries(HTTP_LIB PRIVATE "ws2_32")
-target_include_directories(HTTP_LIB PUBLIC HTTPRequest/include)
 
 add_executable(HTTP src/main.cpp)
 target_link_libraries(HTTP PRIVATE HTTP_LIB)
@@ -52,6 +55,6 @@ if (MINGW)
 endif ()
 
 target_link_libraries(TEST PRIVATE GTest::gtest_main HTTP_LIB)
-gtest_discover_tests(TEST WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+gtest_discover_tests(TEST WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} DISCOVERY_MODE PRE_TEST)
 
 add_custom_target(COPY_COMPILE_COMMANDS ALL COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/compile_commands.json ${CMAKE_SOURCE_DIR})

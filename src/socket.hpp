@@ -12,7 +12,7 @@
 
 namespace socket_lib
 {
-    void init_socket();
+	void init_socket();
 
 	class SockWrapper
 	{

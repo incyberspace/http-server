@@ -43,9 +43,11 @@ namespace config_lib
 	class Config final
 	{
 	  public:
-		explicit Config(const std::filesystem::path &config_path);
+		Config() = default;
+		Config(const std::filesystem::path &config_path);
 		[[nodiscard]] ConfigProxy get(const std::string &key) const;
-		[[nodiscard]] std::optional<ConfigProxy> try_get(const std::string &key) const;
+		[[nodiscard]] std::optional<ConfigProxy> try_get(
+			const std::string &key) const;
 
 	  private:
 		std::unordered_map<std::string, ConfigProxy::ValueVariant> data_;
@@ -62,7 +64,4 @@ namespace config_lib
 	{
 		return lhs == static_cast<T>(rhs);
 	}
-
-	inline std::filesystem::path default_config_path("./config.conf");
-	inline const Config config(default_config_path);
 } // namespace config_lib

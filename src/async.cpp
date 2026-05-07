@@ -1,5 +1,6 @@
 #include "async.hpp"
 
+#include "server.hpp"
 #include "utils.hpp"
 
 namespace async_lib
@@ -57,12 +58,23 @@ namespace async_lib
 		cv_.notify_one();
 	}
 
+	void EventLoopManager::start_event_loop()
+	{
+		run_event_loop_flag = true;
+		cv_.notify_one();
+	}
+	void EventLoopManager::end_event_loop()
+	{
+		cv_.notify_one();
+		run_event_loop_flag = false;
+	}
+
 	void EventLoopManager::run()
 	{
-		while (true)
+		while (run_event_loop_flag)
 		{
 			std::unique_lock lock(handles_mutex_);
-			while (!handles_.empty())
+			while (!handles_.empty() && run_event_loop_flag)
 			{
 				for (auto it = handles_.begin(); it != handles_.end();)
 				{

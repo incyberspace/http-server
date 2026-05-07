@@ -4,6 +4,6 @@
 [submodule "googletest"]
 	path = googletest
 	url = https://github.com/google/googletest
-[submodule "HTTPRequest"]
-	path = HTTPRequest
-	url = https://github.com/elnormous/HTTPRequest
+[submodule "cpp-httplib"]
+	path = cpp-httplib
+	url = https://github.com/yhirose/cpp-httplib

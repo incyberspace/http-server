@@ -34,8 +34,8 @@ namespace config_lib
 
 			const auto delim_it =
 				std::ranges::find(line.begin(), line.end(), '=');
-			if (delim_it == line.begin() ||
-				delim_it == std::prev(line.end()) || delim_it == line.end())
+			if (delim_it == line.begin() || delim_it == std::prev(line.end()) ||
+				delim_it == line.end())
 			{
 				log_and_throw(std::format(
 					"Failed to parse the config file. Invalid line : {}",

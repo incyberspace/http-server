@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <coroutine>
 #include <deque>
@@ -7,7 +8,6 @@
 #include <utility>
 
 #include <spdlog/spdlog.h>
-
 namespace async_lib
 {
 	struct FinalAwaitable final
@@ -62,12 +62,16 @@ namespace async_lib
 
 		[[nodiscard]] static EventLoopManager &get_instance();
 
+		void start_event_loop();
+		void end_event_loop();
+
 	  private:
 		using Handle = std::coroutine_handle<PromiseBase>;
 		std::deque<Handle> handles_;
 		std::mutex handles_mutex_;
 		std::condition_variable cv_;
 		std::jthread runner_;
+		std::atomic<bool> run_event_loop_flag = true;
 
 		EventLoopManager();
 		void run();

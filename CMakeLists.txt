@@ -9,7 +9,7 @@ endif ()
 
 SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(ENABLE_ASAN CACHE FORCE BOOL "" OFF)
+set(ENABLE_ASAN OFF CACHE BOOL "" FORCE)
 
 if (ENABLE_ASAN)
     add_compile_options(-MD -fsanitize=address,undefined)

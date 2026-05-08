@@ -186,9 +186,15 @@ namespace async_lib
 
 		T await_resume()
 		{
-			if (const auto except = handle_.promise().except_)
+			// if (const auto except = handle_.promise().except_)
+			//{
+			//	std::rethrow_exception(except);
+			// }
+			//  TODO: I CANNOT FIX THIS
+
+			if (handle_.promise().except_)
 			{
-				std::rethrow_exception(except);
+				throw std::exception("An exception from Task");
 			}
 
 			return handle_.promise().cur_value_;
@@ -310,9 +316,15 @@ namespace async_lib
 
 		void await_resume() const
 		{
-			if (const auto except = handle_.promise().except_)
+			// if (const auto except = handle_.promise().except_)
+			//{
+			//	std::rethrow_exception(except);
+			// }
+			//  TODO: I CANNOT FIX THIS
+
+			if (handle_.promise().except_)
 			{
-				std::rethrow_exception(except);
+				throw std::exception("An exception from Task");
 			}
 		}
 

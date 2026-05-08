@@ -83,10 +83,10 @@ namespace http_lib
 				break;
 			}
 
-			std::erase_if(spawned_servers,
-						  [](const std::unique_ptr<Server> &server) -> bool {
-							  return server->is_done();
-						  });
+			//std::erase_if(spawned_servers,
+			//			  [](const std::unique_ptr<Server> &server) -> bool {
+			//				  return server->is_done();
+			//			  });
 			SPDLOG_INFO("Accepted");
 			spawned_servers.emplace_back(
 				std::make_unique<Server>(std::move(accept_sock), 100000));
@@ -347,10 +347,9 @@ namespace http_lib
 			{
 				request = co_await get_request();
 			}
-			catch (const std::exception &e)
+			catch (const std::exception &)
 			{
-				SPDLOG_DEBUG("get_request() failed : {}", e.what());
-				std::cout << e.what() << std::endl;
+				SPDLOG_DEBUG("get_request() failed");
 				break;
 			}
 
@@ -358,10 +357,9 @@ namespace http_lib
 			{
 				co_await send_response(request);
 			}
-			catch (const std::exception &e)
+			catch (const std::exception &)
 			{
-				std::cout << e.what() << std::endl;
-				SPDLOG_DEBUG("send_response() failed : {}", e.what());
+				SPDLOG_DEBUG("send_response() failed");
 				break;
 			}
 

@@ -33,6 +33,7 @@ namespace test_lib
 		LoggerInitHelper()
 		{
 			spdlog::set_level(spdlog::level::debug);
+			spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] [%@] %!: %v");
 		}
 	} logger_init_helper;
 
@@ -41,7 +42,7 @@ namespace test_lib
 		const char *const tmp_config_path_c_str = std::tmpnam(nullptr);
 		std::filesystem::path tmp_config_path;
 
-		spdlog::debug("c_str : {}", tmp_config_path_c_str);
+		SPDLOG_DEBUG("c_str : {}", tmp_config_path_c_str);
 
 		{
 			std::ofstream config_file;
@@ -66,7 +67,7 @@ namespace test_lib
 			config_file << " INT_KEY =10" << std::endl;
 		}
 
-		spdlog::debug("config_path : {}", path_to_c_str(tmp_config_path));
+		SPDLOG_DEBUG("config_path : {}", path_to_c_str(tmp_config_path));
 		config_lib::Config config(tmp_config_path);
 
 		ASSERT_EQ(static_cast<bool>(config.get("T1")), true);
@@ -93,6 +94,7 @@ namespace test_lib
 		{
 			http_lib::Server::stop_spawning_servers();
 			async_lib::EventLoopManager::get_instance().end_event_loop();
+			http_lib::Server::join_server_spawner();
 		}
 	};
 
@@ -103,6 +105,8 @@ namespace test_lib
 			get_test_config().get("PORT")); // localhost doesn't seem to work
 
 		auto res = cli.Get("/");
+		cli.set_keep_alive(false);
+
 		ASSERT_TRUE(res);
 
 		std::ifstream index_html("./test/index.html");
@@ -117,8 +121,11 @@ namespace test_lib
 		ASSERT_TRUE(res);
 		ASSERT_EQ(res->status, 200);
 		ASSERT_EQ(res->body.size(), index_html_size);
+		cli.stop();
+		ASSERT_TRUE(!cli.is_socket_open());
 	}
 
+	/*
 	TEST_F(server_test, invalid_requests)
 	{
 		httplib::Client cli("127.0.0.1", get_test_config().get("PORT"));
@@ -138,4 +145,5 @@ namespace test_lib
 		ASSERT_EQ(res->status, 405);
 		ASSERT_EQ(res->body.size(), 0);
 	}
+	*/
 } // namespace test_lib

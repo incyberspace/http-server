@@ -31,9 +31,9 @@ namespace socket_lib
 
 	SockWrapper::~SockWrapper()
 	{
-		if (!is_moved_from_)
+		if (!is_moved_from_ && sock_.has_value())
 		{
-			closesocket(sock_);
+			closesocket(*sock_);
 		}
 	}
 
@@ -49,9 +49,9 @@ namespace socket_lib
 			return *this;
 		}
 
-		if (!is_moved_from_)
+		if (!is_moved_from_ && sock_.has_value())
 		{
-			closesocket(sock_);
+			closesocket(*sock_);
 		}
 
 		sock_ = other.sock_;
@@ -62,7 +62,15 @@ namespace socket_lib
 
 	SOCKET SockWrapper::get() const
 	{
-		return sock_;
+		assert(sock_.has_value());
+		return *sock_;
+	}
+
+	void SockWrapper::close()
+	{
+		assert(sock_.has_value());
+		closesocket(*sock_);
+		sock_ = std::nullopt;
 	}
 
 	SockStream::SockStream(SockWrapper sock, const int buf_size)
@@ -129,9 +137,9 @@ namespace socket_lib
 			total_read_bytes += static_cast<int>(buf.size());
 			result.insert(result.end(), buf.begin(), buf.end());
 
-			spdlog::debug("Scheduling resume");
+			SPDLOG_DEBUG("Scheduling resume");
 			co_await async_lib::Task<std::vector<char>>::ScheduleResume();
-			spdlog::debug("Resumed");
+			SPDLOG_DEBUG("Resumed");
 		}
 		assert(total_read_bytes == size);
 
@@ -192,9 +200,9 @@ namespace socket_lib
 				result.insert(result.end(), buf.begin(), buf.end());
 			}
 
-			spdlog::debug("Scheduling resume");
+			SPDLOG_DEBUG("Scheduling resume");
 			co_await async_lib::Task<std::string>::ScheduleResume();
-			spdlog::debug("Resumed");
+			SPDLOG_DEBUG("Resumed");
 		}
 
 		co_return result;

@@ -10,7 +10,7 @@
 	do                                                                         \
 	{                                                                          \
 		std::string dup_msg = msg;                                             \
-		spdlog::error((dup_msg));                                              \
+		SPDLOG_ERROR((dup_msg));                                               \
 		throw std::runtime_error((dup_msg));                                   \
 	} while (false)
 

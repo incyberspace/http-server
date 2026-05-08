@@ -55,6 +55,8 @@ namespace http_lib
 		static constexpr int default_sock_stream_buf_size = 100;
 		socket_lib::SockStream sock_stream_;
 		async_lib::Task<void> runner_task_;
+		static socket_lib::SockWrapper listen_sock;
+
 		[[nodiscard]] static config_lib::Config &get_config();
 		[[nodiscard]] async_lib::Task<Request> get_request();
 		[[nodiscard]] async_lib::Task<void> send_response(

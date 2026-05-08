@@ -8,6 +8,7 @@
 #include <utility>
 
 #include <spdlog/spdlog.h>
+
 namespace async_lib
 {
 	struct FinalAwaitable final
@@ -59,6 +60,7 @@ namespace async_lib
 	  public:
 		EventLoopManager(const EventLoopManager &other) = delete;
 		EventLoopManager(EventLoopManager &&other) = delete;
+		~EventLoopManager();
 
 		[[nodiscard]] static EventLoopManager &get_instance();
 
@@ -70,7 +72,7 @@ namespace async_lib
 		std::deque<Handle> handles_;
 		std::mutex handles_mutex_;
 		std::condition_variable cv_;
-		std::jthread runner_;
+		std::thread runner_;
 		std::atomic<bool> run_event_loop_flag = true;
 
 		EventLoopManager();
@@ -159,6 +161,7 @@ namespace async_lib
 				return;
 			}
 
+			assert(handle_.done());
 			handle_.destroy();
 		}
 
@@ -170,7 +173,7 @@ namespace async_lib
 		[[nodiscard]] std::coroutine_handle<> await_suspend(
 			const std::coroutine_handle<> caller_handle) const
 		{
-			spdlog::debug("Suspend is called");
+			SPDLOG_DEBUG("Suspend is called");
 
 			if (handle_.done())
 			{
@@ -282,6 +285,7 @@ namespace async_lib
 				return;
 			}
 
+			assert(handle_.done());
 			handle_.destroy();
 		}
 
@@ -293,7 +297,7 @@ namespace async_lib
 		[[nodiscard]] std::coroutine_handle<> await_suspend(
 			const std::coroutine_handle<> caller_handle) const
 		{
-			spdlog::debug("Suspend is called");
+			SPDLOG_DEBUG("Suspend is called");
 
 			if (handle_.done())
 			{

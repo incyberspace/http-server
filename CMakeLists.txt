@@ -9,6 +9,14 @@ endif ()
 
 SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(ENABLE_ASAN CACHE FORCE BOOL "" OFF)
+
+if (ENABLE_ASAN)
+    add_compile_options(-MD -fsanitize=address,undefined)
+    link_libraries(clang_rt.asan_dynamic-x86_64 clang_rt.asan_dynamic_runtime_thunk-x86_64)
+    add_link_options(/wholearchive:clang_rt.asan_dynamic_runtime_thunk-x86_64.lib)
+endif ()
+
 add_library(HTTP_LIB STATIC
         src/server.cpp
         src/server.hpp
@@ -24,6 +32,9 @@ add_library(HTTP_LIB STATIC
 
 set_target_properties(HTTP_LIB PROPERTIES CXX_EXTENSIONS OFF)
 target_compile_features(HTTP_LIB PUBLIC cxx_std_23)
+target_compile_definitions(HTTP_LIB PUBLIC
+        SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
+)
 
 if (MINGW)
     target_compile_options(HTTP_LIB PUBLIC -Wall -Wextra -pedantic-errors -fno-omit-frame-pointer -Wno-aix-compat)

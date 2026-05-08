@@ -1,6 +1,7 @@
 #include "server.hpp"
 
 #include <fstream>
+#include <iostream>
 #include <ranges>
 #include <regex>
 #include <vector>
@@ -49,6 +50,7 @@ namespace http_lib
 {
 	std::thread Server::server_spawner;
 	std::atomic<bool> Server::spawn_servers = true;
+	socket_lib::SockWrapper Server::listen_sock;
 
 	config_lib::Config &Server::get_config()
 	{
@@ -60,24 +62,24 @@ namespace http_lib
 	{
 		std::vector<std::unique_ptr<Server>> spawned_servers;
 
-		while (Server::spawn_servers)
+		while (spawn_servers)
 		{
-			spdlog::debug("Server count : {}", spawned_servers.size());
+			SPDLOG_DEBUG("Server count : {}", spawned_servers.size());
 			socket_lib::SockWrapper accept_sock =
 				accept(listen_sock.get(), nullptr, nullptr);
 
 			if (accept_sock.get() == INVALID_SOCKET)
 			{
-				spdlog::error("Accept failed. Reason : {}",
-							  utils_lib::get_last_error_as_str());
+				SPDLOG_ERROR("Accept failed. Reason : {}",
+							 utils_lib::get_last_error_as_str());
 				break;
 			}
 
 			u_long socket_mode = 1;
 			if (ioctlsocket(accept_sock.get(), FIONBIO, &socket_mode) != 0)
 			{
-				spdlog::error("ioctlsocket failed. Reason : {}",
-							  utils_lib::get_last_error_as_str());
+				SPDLOG_ERROR("ioctlsocket failed. Reason : {}",
+							 utils_lib::get_last_error_as_str());
 				break;
 			}
 
@@ -85,7 +87,7 @@ namespace http_lib
 						  [](const std::unique_ptr<Server> &server) -> bool {
 							  return server->is_done();
 						  });
-			spdlog::info("Accepted");
+			SPDLOG_INFO("Accepted");
 			spawned_servers.emplace_back(
 				std::make_unique<Server>(std::move(accept_sock), 100000));
 		}
@@ -95,8 +97,7 @@ namespace http_lib
 	{
 		get_config() = std::move(server_config);
 
-		socket_lib::SockWrapper listen_sock =
-			socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (listen_sock.get() == INVALID_SOCKET)
 		{
 			log_and_throw(
@@ -130,6 +131,7 @@ namespace http_lib
 
 	void Server::stop_spawning_servers()
 	{
+		listen_sock.close();
 		spawn_servers = false;
 	}
 
@@ -345,9 +347,10 @@ namespace http_lib
 			{
 				request = co_await get_request();
 			}
-			catch (std::exception &e)
+			catch (const std::exception &e)
 			{
-				spdlog::debug("get_request() failed : {}", e.what());
+				SPDLOG_DEBUG("get_request() failed : {}", e.what());
+				std::cout << e.what() << std::endl;
 				break;
 			}
 
@@ -355,15 +358,16 @@ namespace http_lib
 			{
 				co_await send_response(request);
 			}
-			catch (std::exception &e)
+			catch (const std::exception &e)
 			{
-				spdlog::debug("send_response() failed : {}", e.what());
+				std::cout << e.what() << std::endl;
+				SPDLOG_DEBUG("send_response() failed : {}", e.what());
 				break;
 			}
 
 			co_await async_lib::Task<void>::ScheduleResume();
 		}
 
-		spdlog::debug("The server loop has ended");
+		SPDLOG_DEBUG("The server loop has ended");
 	}
 } // namespace http_lib

@@ -36,6 +36,14 @@ namespace async_lib
 		start_event_loop();
 	}
 
+	EventLoopManager::~EventLoopManager()
+	{
+		if (run_event_loop_flag)
+		{
+			runner_.join();
+		}
+	}
+
 	EventLoopManager &EventLoopManager::get_instance()
 	{
 		static EventLoopManager instance;
@@ -44,7 +52,7 @@ namespace async_lib
 
 	void EventLoopManager::add_handle(const Handle handle)
 	{
-		spdlog::debug("Adding a handle");
+		SPDLOG_DEBUG("Adding a handle");
 		{
 			std::lock_guard lock(handles_mutex_);
 			handles_.emplace_back(handle);
@@ -55,19 +63,20 @@ namespace async_lib
 
 	void EventLoopManager::wake_up_event_loop()
 	{
-		spdlog::debug("Waking up the event loop");
+		SPDLOG_DEBUG("Waking up the event loop");
 		cv_.notify_one();
 	}
 
 	void EventLoopManager::start_event_loop()
 	{
-		runner_ = std::jthread(&EventLoopManager::run, this);
+		run_event_loop_flag = true;
+		runner_ = std::thread(&EventLoopManager::run, this);
 	}
 
 	void EventLoopManager::end_event_loop()
 	{
 		run_event_loop_flag = false;
-		cv_.notify_one();
+		wake_up_event_loop();
 		runner_.join();
 	}
 
@@ -91,7 +100,7 @@ namespace async_lib
 						const auto tmp = *it;
 						handles_.erase(it);
 
-						spdlog::debug("Resuming a handle");
+						SPDLOG_DEBUG("Resuming a handle");
 
 						lock.unlock(); // To avoid recursive locking vvv
 						tmp.resume();  // The resumed coroutine might add a
@@ -110,7 +119,7 @@ namespace async_lib
 				break;
 			}
 
-			spdlog::debug("Putting the event loop to sleep");
+			SPDLOG_DEBUG("Putting the event loop to sleep");
 			cv_.wait(lock);
 		}
 	}

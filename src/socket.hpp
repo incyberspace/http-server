@@ -17,6 +17,7 @@ namespace socket_lib
 	class SockWrapper
 	{
 	  public:
+		SockWrapper() = default;
 		SockWrapper(SOCKET sock);
 		~SockWrapper();
 
@@ -27,10 +28,11 @@ namespace socket_lib
 		SockWrapper &operator=(SockWrapper &&other) noexcept;
 
 		[[nodiscard]] SOCKET get() const;
+		void close();
 
 	  private:
 		bool is_moved_from_ = false;
-		SOCKET sock_;
+		std::optional<SOCKET> sock_;
 	};
 
 	class SockStream

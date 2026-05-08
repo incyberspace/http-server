@@ -83,10 +83,10 @@ namespace http_lib
 				break;
 			}
 
-			//std::erase_if(spawned_servers,
-			//			  [](const std::unique_ptr<Server> &server) -> bool {
-			//				  return server->is_done();
-			//			  });
+			std::erase_if(spawned_servers,
+						  [](const std::unique_ptr<Server> &server) -> bool {
+							  return server->is_done();
+						  });
 			SPDLOG_INFO("Accepted");
 			spawned_servers.emplace_back(
 				std::make_unique<Server>(std::move(accept_sock), 100000));

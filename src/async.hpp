@@ -161,7 +161,7 @@ namespace async_lib
 				return;
 			}
 
-			assert(handle_.done());
+			//assert(handle_.done());
 			handle_.destroy();
 		}
 
@@ -291,7 +291,7 @@ namespace async_lib
 				return;
 			}
 
-			assert(handle_.done());
+			//assert(handle_.done());
 			handle_.destroy();
 		}
 

@@ -125,7 +125,6 @@ namespace test_lib
 		ASSERT_TRUE(!cli.is_socket_open());
 	}
 
-	/*
 	TEST_F(server_test, invalid_requests)
 	{
 		httplib::Client cli("127.0.0.1", get_test_config().get("PORT"));
@@ -145,5 +144,4 @@ namespace test_lib
 		ASSERT_EQ(res->status, 405);
 		ASSERT_EQ(res->body.size(), 0);
 	}
-	*/
 } // namespace test_lib

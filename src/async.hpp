@@ -194,7 +194,7 @@ namespace async_lib
 
 			if (handle_.promise().except_)
 			{
-				throw std::exception("An exception from Task");
+				throw std::runtime_error("An exception from Task");
 			}
 
 			return handle_.promise().cur_value_;
@@ -324,7 +324,7 @@ namespace async_lib
 
 			if (handle_.promise().except_)
 			{
-				throw std::exception("An exception from Task");
+				throw std::runtime_error("An exception from Task");
 			}
 		}
 

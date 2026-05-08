@@ -92,8 +92,8 @@ namespace test_lib
 
 		static void TearDownTestCase()
 		{
-			http_lib::Server::stop_spawning_servers();
 			async_lib::EventLoopManager::get_instance().end_event_loop();
+			http_lib::Server::stop_spawning_servers();
 			http_lib::Server::join_server_spawner();
 		}
 	};

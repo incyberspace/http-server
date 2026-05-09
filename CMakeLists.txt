@@ -7,9 +7,16 @@ if (NOT WIN32)
     message(FATAL_ERROR "This program is only for windows")
 endif ()
 
-SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(ENABLE_ASAN OFF)
 
-set(ENABLE_ASAN OFF CACHE BOOL "" FORCE)
+if (MSVC)
+    add_compile_options(/EHsc)
+endif ()
+
+SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(ENABLE_ASAN ON)
+endif ()
 
 if (ENABLE_ASAN)
     add_compile_options(-MD -fsanitize=address,undefined)
@@ -35,6 +42,8 @@ target_compile_features(HTTP_LIB PUBLIC cxx_std_23)
 target_compile_definitions(HTTP_LIB PUBLIC
         SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG
 )
+target_compile_definitions(HTTP_LIB PUBLIC _WIN32_WINNT=0x0A00 WINVER=0x0A00)
+
 
 if (MINGW)
     target_compile_options(HTTP_LIB PUBLIC -Wall -Wextra -pedantic-errors -fno-omit-frame-pointer -Wno-aix-compat)

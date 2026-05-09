@@ -12,21 +12,23 @@ namespace utils_lib
 {
 	void strip(std::string &s)
 	{
-		std::string stripped;
-		const auto s_copy_begin =
-			std::ranges::find_if(s.begin(), s.end(), [](const char ch) -> bool {
-				return !isspace(ch);
+		const auto str_start =
+			std::ranges::find_if(s.begin(), s.end(), [](const char c) -> bool {
+				return !std::isspace(c);
 			});
-		const auto s_copy_end = std::ranges::find_if(s.rbegin(), s.rend(),
-													 [](const char ch) -> bool {
-														 return !isspace(ch);
-													 })
-									.base();
+		s.erase(s.begin(), str_start);
 
-		std::for_each(
-			s_copy_begin, s_copy_end,
-			[&stripped](const char ch) -> void { stripped.push_back(ch); });
-		s = std::move(stripped);
+		const auto str_rend = std::ranges::find_if(
+			s.rbegin(), s.rend(),
+			[](const char c) -> bool { return !std::isspace(c); });
+
+		if (str_rend == s.rend())
+		{
+			return;
+		}
+
+		const auto str_end = std::next(str_rend).base();
+		s.erase(std::next(str_end), s.end());
 	}
 
 	std::wstring get_last_error_as_wstr()

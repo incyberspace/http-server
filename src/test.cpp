@@ -37,6 +37,57 @@ namespace test_lib
 		}
 	} logger_init_helper;
 
+	TEST(utils_test, strip)
+	{
+		std::string s;
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "");
+
+		s = "  ";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "");
+
+		s = "  ";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "");
+
+		s = "a";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "a");
+
+		s = " a";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "a");
+
+		s = "a ";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "a");
+
+		s = " a ";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "a");
+
+		s = "$b1";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "$b1");
+
+		s = "$ b 1";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "$ b 1");
+
+		s = "  $ b 1";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "$ b 1");
+
+		s = "$ b 1 ";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "$ b 1");
+
+		s = " $ b 1 ";
+		utils_lib::strip(s);
+		ASSERT_EQ(s, "$ b 1");
+	}
+
 	TEST(config_test, read)
 	{
 		const char *const tmp_config_path_c_str = std::tmpnam(nullptr);

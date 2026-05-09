@@ -13,13 +13,11 @@ if (MSVC)
     add_compile_options(/EHsc)
 endif ()
 
-SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(ENABLE_ASAN ON)
-endif ()
+set(CACHE ENABLE_ASAN BOOL "" OFF)
 
-if (ENABLE_ASAN)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND ENABLE_ASAN)
     add_compile_options(-MD -fsanitize=address,undefined)
+    add_link_options(-MD -fsanitize=address,undefined)
     link_libraries(clang_rt.asan_dynamic-x86_64 clang_rt.asan_dynamic_runtime_thunk-x86_64)
 endif ()
 

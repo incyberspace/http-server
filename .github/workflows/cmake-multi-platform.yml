@@ -48,7 +48,6 @@ jobs:
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
       run: |
-        cp 'C:/Program Files/LLVM/lib/clang/20/lib/windows/*' 'D:/a/http-server/http-server/build' &&
         git submodule init && git submodule update &&
         cmake -G Ninja -B '${{ steps.strings.outputs.build-output-dir }}' `
           -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }} `
@@ -64,7 +63,7 @@ jobs:
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-      run: ctest --build-config ${{ matrix.build_type }} --output-on-failure
+      run: cp 'C:/Program Files/LLVM/lib/clang/20/lib/windows/*' 'D:/a/http-server/http-server/build' && ctest --build-config ${{ matrix.build_type }} --output-on-failure
     
     - name: Debug via SSH  
       if: failure()

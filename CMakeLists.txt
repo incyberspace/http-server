@@ -21,7 +21,6 @@ endif ()
 if (ENABLE_ASAN)
     add_compile_options(-MD -fsanitize=address,undefined)
     link_libraries(clang_rt.asan_dynamic-x86_64 clang_rt.asan_dynamic_runtime_thunk-x86_64)
-    add_link_options(/wholearchive:clang_rt.asan_dynamic_runtime_thunk-x86_64.lib)
 endif ()
 
 add_library(HTTP_LIB STATIC

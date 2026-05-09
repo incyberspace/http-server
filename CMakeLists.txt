@@ -75,4 +75,8 @@ endif ()
 target_link_libraries(TEST PRIVATE GTest::gtest_main HTTP_LIB)
 gtest_discover_tests(TEST WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} DISCOVERY_MODE PRE_TEST)
 
-add_custom_target(COPY_COMPILE_COMMANDS ALL COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/compile_commands.json ${CMAKE_SOURCE_DIR})
+set(CACHE COPY_COMPILE_COMMANDS_FLAG BOOL "" OFF)
+
+if (COPY_COMPILE_COMMANDS_FLAG)
+    add_custom_target(COPY_COMPILE_COMMANDS ALL COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/compile_commands.json ${CMAKE_SOURCE_DIR})
+endif ()

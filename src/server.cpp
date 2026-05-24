@@ -329,8 +329,6 @@ namespace http_lib
 		case ErrorStatusCode::METHOD_NOT_ALLOWED:
 			msg = "405 Method Not Allowed";
 			break;
-		default:
-			std::unreachable();
 		}
 
 		co_await sock_stream_.send_all_async("HTTP/1.1 " + msg + "\r\n");
